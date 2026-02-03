@@ -30,7 +30,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: model || 'mistralai/Mistral-7B-Instruct-v0.2',
+          model: model || 'meta-llama/Llama-3.2-3B-Instruct',
           messages: [{ role: 'user', content: 'Hi' }],
           max_tokens: 5
         })

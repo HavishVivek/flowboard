@@ -1,6 +1,6 @@
 import { getSetting } from './db'
 
-const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2'
+const DEFAULT_MODEL = 'meta-llama/Llama-3.2-3B-Instruct'
 
 // Get Hugging Face configuration from settings
 async function getConfig() {
