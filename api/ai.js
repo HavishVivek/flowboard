@@ -1,4 +1,4 @@
-const HF_API_URL = 'https://api-inference.huggingface.co/models'
+const HF_API_URL = 'https://router.huggingface.co/hf-inference/models'
 
 export default async function handler(req, res) {
   // Enable CORS
