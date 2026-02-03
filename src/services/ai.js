@@ -1,6 +1,5 @@
 import { getSetting } from './db'
 
-const HF_API_URL = 'https://api-inference.huggingface.co/models'
 const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.2'
 
 // Get Hugging Face configuration from settings
@@ -10,42 +9,29 @@ async function getConfig() {
   return { apiKey, model }
 }
 
-// Test connection to Hugging Face
+// Test connection to Hugging Face via API route
 export async function testConnection() {
-  const { apiKey } = await getConfig()
+  const { apiKey, model } = await getConfig()
 
   if (!apiKey) {
     return { success: false, message: 'No API key configured. Add your Hugging Face API key in Settings.' }
   }
 
   try {
-    const response = await fetch(`${HF_API_URL}/${DEFAULT_MODEL}`, {
+    const response = await fetch('/api/ai', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        inputs: 'Hello',
-        parameters: { max_new_tokens: 10 }
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'test', apiKey, model })
     })
 
-    if (response.ok) {
-      return { success: true, message: 'Connected to Hugging Face!' }
-    } else if (response.status === 401) {
-      return { success: false, message: 'Invalid API key' }
-    } else if (response.status === 503) {
-      return { success: true, message: 'Connected! Model is loading (this is normal for first use)' }
-    } else {
-      return { success: false, message: `API responded with status ${response.status}` }
-    }
+    const data = await response.json()
+    return data
   } catch (e) {
     return { success: false, message: `Connection failed: ${e.message}` }
   }
 }
 
-// Generate text using Hugging Face
+// Generate text using Hugging Face via API route
 async function generate(prompt, options = {}) {
   const { apiKey, model } = await getConfig()
 
@@ -53,25 +39,24 @@ async function generate(prompt, options = {}) {
     throw new Error('No Hugging Face API key configured')
   }
 
-  const response = await fetch(`${HF_API_URL}/${options.model || model}`, {
+  const response = await fetch('/api/ai', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      inputs: prompt,
+      action: 'generate',
+      apiKey,
+      model: options.model || model,
+      prompt,
       parameters: {
-        max_new_tokens: options.maxTokens || 500,
-        temperature: options.temperature || 0.7,
-        return_full_text: false
+        maxTokens: options.maxTokens || 500,
+        temperature: options.temperature || 0.7
       }
     })
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Hugging Face API error: ${response.status} - ${errorText}`)
+    const error = await response.json()
+    throw new Error(error.error || 'API request failed')
   }
 
   const data = await response.json()
@@ -161,16 +146,15 @@ function getFallbackSuggestions(tasks, timeContext) {
 export async function generateWeeklySchedule(tasks, projects) {
   const { apiKey } = await getConfig()
 
+  const weekDates = getWeekDates()
+  const preferredTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
+
   if (!apiKey) {
     console.log('No API key, using fallback schedule')
-    const weekDates = getWeekDates()
-    const preferredTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
     return generateFallbackSchedule(tasks, weekDates, preferredTimes)
   }
 
   const workHours = await getSetting('workHoursPerDay') || 8
-  const preferredTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
-  const weekDates = getWeekDates()
 
   const taskList = tasks.slice(0, 10).map(t => ({
     id: t.id,
