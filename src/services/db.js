@@ -47,8 +47,8 @@ export async function initializeSettings() {
   if (!existingSettings) {
     await db.settings.bulkPut([
       { key: 'initialized', value: true },
-      { key: 'ollamaUrl', value: 'http://localhost:11434' },
-      { key: 'ollamaModel', value: 'llama3.2' },
+      { key: 'hfApiKey', value: '' },
+      { key: 'hfModel', value: 'mistralai/Mistral-7B-Instruct-v0.2' },
       { key: 'weeklyContentGoal', value: 1 },
       { key: 'workHoursPerDay', value: 8 },
       { key: 'preferredWorkTimes', value: ['morning', 'afternoon'] }

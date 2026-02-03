@@ -163,7 +163,7 @@ import { useTasksStore } from '../stores/tasks'
 import { useContentStore } from '../stores/content'
 import { useProjectsStore } from '../stores/projects'
 import { TIME_SLOTS } from '../services/db'
-import { generateWeeklySchedule } from '../services/ollama'
+import { generateWeeklySchedule } from '../services/ai'
 import WeeklySchedule from '../components/WeeklySchedule.vue'
 import Modal from '../components/Modal.vue'
 

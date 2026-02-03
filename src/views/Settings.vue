@@ -5,27 +5,33 @@
       <p class="text-gray-400">Configure your project tracker</p>
     </div>
 
-    <!-- Ollama Settings -->
+    <!-- AI Settings -->
     <div class="card">
-      <h3 class="font-semibold mb-4">AI Settings (Ollama)</h3>
+      <h3 class="font-semibold mb-4">AI Settings (Hugging Face)</h3>
       <div class="space-y-4">
         <div>
-          <label class="label">Ollama URL</label>
-          <input v-model="settings.ollamaUrl" type="text" class="input w-full" placeholder="http://localhost:11434" />
-          <p class="text-xs text-gray-500 mt-1">The URL where Ollama is running</p>
+          <label class="label">Hugging Face API Key</label>
+          <input
+            v-model="settings.hfApiKey"
+            type="password"
+            class="input w-full"
+            placeholder="hf_xxxxxxxxxxxxxxxxxx"
+          />
+          <p class="text-xs text-gray-500 mt-1">
+            Get a free API key at <a href="https://huggingface.co/settings/tokens" target="_blank" class="text-primary-400 hover:underline">huggingface.co/settings/tokens</a>
+          </p>
         </div>
         <div>
           <label class="label">Model</label>
-          <select v-model="settings.ollamaModel" class="select w-full">
-            <option value="llama3.2">Llama 3.2 (Fast)</option>
-            <option value="mistral">Mistral (Balanced)</option>
-            <option value="codellama">CodeLlama (Coding)</option>
-            <option value="llama2">Llama 2</option>
+          <select v-model="settings.hfModel" class="select w-full">
+            <option value="mistralai/Mistral-7B-Instruct-v0.2">Mistral 7B (Recommended)</option>
+            <option value="HuggingFaceH4/zephyr-7b-beta">Zephyr 7B</option>
+            <option value="microsoft/Phi-3-mini-4k-instruct">Phi-3 Mini (Fast)</option>
           </select>
           <p class="text-xs text-gray-500 mt-1">Choose the model for AI suggestions</p>
         </div>
         <div>
-          <button @click="testOllamaConnection" :disabled="testingConnection" class="btn btn-secondary">
+          <button @click="testHfConnection" :disabled="testingConnection" class="btn btn-secondary">
             {{ testingConnection ? 'Testing...' : 'Test Connection' }}
           </button>
           <span v-if="connectionStatus" :class="['ml-3 text-sm', connectionStatus.success ? 'text-green-400' : 'text-red-400']">
@@ -116,13 +122,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import db, { getSetting, setSetting, TIME_SLOTS } from '../services/db'
-import { testConnection } from '../services/ollama'
+import { testConnection } from '../services/ai'
 
 const timeSlots = TIME_SLOTS
 
 const settings = ref({
-  ollamaUrl: 'http://localhost:11434',
-  ollamaModel: 'llama3.2',
+  hfApiKey: '',
+  hfModel: 'mistralai/Mistral-7B-Instruct-v0.2',
   weeklyContentGoal: 1,
   workHoursPerDay: 8,
   preferredWorkTimes: ['morning', 'afternoon']
@@ -132,28 +138,31 @@ const testingConnection = ref(false)
 const connectionStatus = ref(null)
 
 async function loadSettings() {
-  settings.value.ollamaUrl = await getSetting('ollamaUrl') || 'http://localhost:11434'
-  settings.value.ollamaModel = await getSetting('ollamaModel') || 'llama3.2'
+  settings.value.hfApiKey = await getSetting('hfApiKey') || ''
+  settings.value.hfModel = await getSetting('hfModel') || 'mistralai/Mistral-7B-Instruct-v0.2'
   settings.value.weeklyContentGoal = await getSetting('weeklyContentGoal') || 1
   settings.value.workHoursPerDay = await getSetting('workHoursPerDay') || 8
   settings.value.preferredWorkTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
 }
 
 async function saveSettings() {
-  await setSetting('ollamaUrl', settings.value.ollamaUrl)
-  await setSetting('ollamaModel', settings.value.ollamaModel)
+  await setSetting('hfApiKey', settings.value.hfApiKey)
+  await setSetting('hfModel', settings.value.hfModel)
   await setSetting('weeklyContentGoal', settings.value.weeklyContentGoal)
   await setSetting('workHoursPerDay', settings.value.workHoursPerDay)
   await setSetting('preferredWorkTimes', settings.value.preferredWorkTimes)
   alert('Settings saved!')
 }
 
-async function testOllamaConnection() {
+async function testHfConnection() {
   testingConnection.value = true
   connectionStatus.value = null
 
+  // Temporarily save the API key so the test can use it
+  await setSetting('hfApiKey', settings.value.hfApiKey)
+
   try {
-    const result = await testConnection(settings.value.ollamaUrl)
+    const result = await testConnection()
     connectionStatus.value = result
   } catch (e) {
     connectionStatus.value = { success: false, message: e.message }
