@@ -24,13 +24,13 @@
         <div>
           <label class="label">Model</label>
           <select v-model="settings.hfModel" class="select w-full">
-            <option value="mistralai/Mixtral-8x7B-Instruct-v0.1">Mixtral 8x7B (Recommended)</option>
-            <option value="meta-llama/Meta-Llama-3-8B-Instruct">Llama 3 8B</option>
+            <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B v0.3 (Recommended)</option>
+            <option value="microsoft/Phi-3-mini-4k-instruct">Phi-3 Mini (Fast)</option>
             <option value="HuggingFaceH4/zephyr-7b-beta">Zephyr 7B</option>
-            <option value="google/flan-t5-xxl">Flan-T5 XXL (Fast)</option>
+            <option value="tiiuae/falcon-7b-instruct">Falcon 7B</option>
           </select>
           <p class="text-xs text-gray-500 mt-1">
-            Models available on the free Serverless Inference API
+            Models available on HF Inference API (free tier)
           </p>
         </div>
         <div>
@@ -142,7 +142,7 @@ const connectionStatus = ref(null)
 
 async function loadSettings() {
   settings.value.hfApiKey = await getSetting('hfApiKey') || ''
-  settings.value.hfModel = await getSetting('hfModel') || 'mistralai/Mixtral-8x7B-Instruct-v0.1'
+  settings.value.hfModel = await getSetting('hfModel') || 'mistralai/Mistral-7B-Instruct-v0.3'
   settings.value.weeklyContentGoal = await getSetting('weeklyContentGoal') || 1
   settings.value.workHoursPerDay = await getSetting('workHoursPerDay') || 8
   settings.value.preferredWorkTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']

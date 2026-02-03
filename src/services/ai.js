@@ -1,6 +1,6 @@
 import { getSetting } from './db'
 
-const DEFAULT_MODEL = 'mistralai/Mixtral-8x7B-Instruct-v0.1'
+const DEFAULT_MODEL = 'mistralai/Mistral-7B-Instruct-v0.3'
 
 // Get Hugging Face configuration from settings
 async function getConfig() {

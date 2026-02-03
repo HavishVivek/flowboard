@@ -1,16 +1,12 @@
 from http.server import BaseHTTPRequestHandler
 import json
-import os
-from huggingface_hub import InferenceClient
+import requests
 
-# Recommended models (in order of preference)
-# These are available on the free Serverless Inference API
-MODELS = [
-    "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "meta-llama/Meta-Llama-3-8B-Instruct",
-    "HuggingFaceH4/zephyr-7b-beta",
-    "microsoft/DialoGPT-large"
-]
+# HF Inference API endpoint
+HF_API_URL = "https://api-inference.huggingface.co/models"
+
+# Models available on free HF Inference API
+DEFAULT_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
@@ -28,7 +24,7 @@ class handler(BaseHTTPRequestHandler):
             data = json.loads(post_data.decode('utf-8'))
             action = data.get('action')
             api_key = data.get('apiKey')
-            model = data.get('model', MODELS[0])
+            model = data.get('model', DEFAULT_MODEL)
             prompt = data.get('prompt', '')
             parameters = data.get('parameters', {})
             tasks = data.get('tasks', [])
@@ -36,17 +32,16 @@ class handler(BaseHTTPRequestHandler):
             if not api_key:
                 return self.send_json_response({'error': 'API key is required'}, 400)
 
-            # Initialize the client
-            client = InferenceClient(token=api_key)
+            headers = {"Authorization": f"Bearer {api_key}"}
 
             if action == 'test':
-                return self.handle_test(client, model)
+                return self.handle_test(headers, model)
             elif action == 'generate':
-                return self.handle_generate(client, model, prompt, parameters)
+                return self.handle_generate(headers, model, prompt, parameters)
             elif action == 'schedule':
-                return self.handle_schedule(client, model, tasks, parameters)
+                return self.handle_schedule(headers, model, tasks, parameters)
             elif action == 'suggest':
-                return self.handle_suggest(client, model, tasks, parameters)
+                return self.handle_suggest(headers, model, tasks, parameters)
             else:
                 return self.send_json_response({'error': 'Invalid action'}, 400)
 
@@ -55,122 +50,160 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self.send_json_response({'error': str(e)}, 500)
 
-    def handle_test(self, client, model):
-        """Test connection to Hugging Face"""
+    def query_hf(self, headers, model, payload):
+        """Query the HF Inference API"""
+        response = requests.post(
+            f"{HF_API_URL}/{model}",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        return response
+
+    def handle_test(self, headers, model):
+        """Test connection to HF Inference API"""
         try:
-            # Try with the specified model first
-            response = client.text_generation(
-                prompt="Say 'connected' in one word:",
-                model=model,
-                max_new_tokens=10
-            )
-            return self.send_json_response({
-                'success': True,
-                'message': f'Connected to Hugging Face! Using model: {model}'
-            })
-        except Exception as e:
-            error_msg = str(e)
-            if '401' in error_msg or 'unauthorized' in error_msg.lower():
-                return self.send_json_response({'success': False, 'message': 'Invalid API key'})
-            elif '503' in error_msg or 'loading' in error_msg.lower():
-                return self.send_json_response({'success': True, 'message': 'Connected! Model is loading (wait a moment)...'})
-            elif 'not supported' in error_msg.lower() or '404' in error_msg:
-                # Try fallback models
-                for fallback_model in MODELS[1:]:
-                    try:
-                        client.text_generation(
-                            prompt="Hi",
-                            model=fallback_model,
-                            max_new_tokens=5
-                        )
-                        return self.send_json_response({
-                            'success': True,
-                            'message': f'Connected! Using fallback model: {fallback_model}'
-                        })
-                    except:
-                        continue
+            payload = {
+                "inputs": "Hello, respond with 'Connected!'",
+                "parameters": {"max_new_tokens": 10}
+            }
+
+            response = self.query_hf(headers, model, payload)
+
+            if response.status_code == 200:
+                return self.send_json_response({
+                    'success': True,
+                    'message': f'Connected to HF Inference API! Model: {model}'
+                })
+            elif response.status_code == 401:
                 return self.send_json_response({
                     'success': False,
-                    'message': 'No supported models available. Enable providers at huggingface.co/settings/inference-providers'
+                    'message': 'Invalid API key'
+                })
+            elif response.status_code == 503:
+                # Model is loading
+                return self.send_json_response({
+                    'success': True,
+                    'message': 'Connected! Model is loading, please wait ~20 seconds and try again.'
                 })
             else:
-                return self.send_json_response({'success': False, 'message': f'Error: {error_msg}'})
+                error_data = response.json() if response.text else {}
+                error_msg = error_data.get('error', response.text)
+                return self.send_json_response({
+                    'success': False,
+                    'message': f'API error ({response.status_code}): {error_msg}'
+                })
 
-    def handle_generate(self, client, model, prompt, parameters):
+        except requests.exceptions.Timeout:
+            return self.send_json_response({
+                'success': False,
+                'message': 'Request timed out. Model may be loading.'
+            })
+        except Exception as e:
+            return self.send_json_response({
+                'success': False,
+                'message': f'Error: {str(e)}'
+            })
+
+    def handle_generate(self, headers, model, prompt, parameters):
         """General text generation"""
         try:
-            response = client.text_generation(
-                prompt=prompt,
-                model=model,
-                max_new_tokens=parameters.get('maxTokens', 500),
-                temperature=parameters.get('temperature', 0.7),
-                return_full_text=False
-            )
-            return self.send_json_response([{'generated_text': response}])
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": parameters.get('maxTokens', 500),
+                    "temperature": parameters.get('temperature', 0.7),
+                    "return_full_text": False
+                }
+            }
+
+            response = self.query_hf(headers, model, payload)
+
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    text = result[0].get('generated_text', '')
+                    return self.send_json_response([{'generated_text': text}])
+                return self.send_json_response([{'generated_text': str(result)}])
+            else:
+                return self.send_json_response({'error': f'API error: {response.status_code}'}, 500)
+
         except Exception as e:
             return self.send_json_response({'error': str(e)}, 500)
 
-    def handle_schedule(self, client, model, tasks, parameters):
+    def handle_schedule(self, headers, model, tasks, parameters):
         """Generate weekly schedule from tasks"""
         if not tasks:
             return self.send_json_response({'schedule': []})
-
-        # Build the prompt
-        task_list = "\n".join([
-            f"- ID:{t.get('id')}, Task: {t.get('title')}, Priority: {t.get('priority', 'Medium')}, Due: {t.get('due_date', 'None')}"
-            for t in tasks[:15]  # Limit to 15 tasks
-        ])
 
         # Get next 7 days
         from datetime import datetime, timedelta
         today = datetime.now()
         dates = [(today + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
 
-        prompt = f"""You are a scheduling assistant. Create a weekly schedule for these tasks.
+        # Build task list for prompt
+        task_list = "\n".join([
+            f"- ID:{t.get('id')}, Task: {t.get('title')}, Priority: {t.get('priority', 'Medium')}, Due: {t.get('due_date', 'None')}"
+            for t in tasks[:12]
+        ])
+
+        prompt = f"""<s>[INST] You are a scheduling assistant. Create a weekly schedule for these tasks.
 
 TASKS:
 {task_list}
 
-AVAILABLE DATES: {', '.join(dates)}
-TIME SLOTS: Morning (6am-12pm), Afternoon (12pm-5pm), Evening (5pm-9pm)
+DATES: {', '.join(dates)}
+TIME SLOTS: "Morning (6am-12pm)", "Afternoon (12pm-5pm)", "Evening (5pm-9pm)"
 
 RULES:
-- Schedule high priority tasks earlier
-- Respect due dates
-- Balance workload across days
+- High priority tasks go earlier in the week
+- Respect due dates (schedule before due date)
+- Spread tasks across different days
 
-OUTPUT FORMAT (JSON array only, no other text):
+Respond with ONLY a JSON array, no other text:
 [{{"task_id": 1, "date": "YYYY-MM-DD", "time_slot": "Morning (6am-12pm)"}}]
-
-JSON:"""
+[/INST]"""
 
         try:
-            response = client.text_generation(
-                prompt=prompt,
-                model=model,
-                max_new_tokens=800,
-                temperature=0.3,
-                return_full_text=False
-            )
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 600,
+                    "temperature": 0.3,
+                    "return_full_text": False
+                }
+            }
 
-            # Parse JSON from response
-            schedule = self.extract_json_array(response)
+            response = self.query_hf(headers, model, payload)
 
-            # Validate schedule items
-            valid_schedule = []
-            for item in schedule:
-                if item.get('task_id') and item.get('date') and item.get('time_slot'):
-                    if item['date'] in dates:
-                        valid_schedule.append(item)
+            if response.status_code == 200:
+                result = response.json()
+                text = ""
+                if isinstance(result, list) and len(result) > 0:
+                    text = result[0].get('generated_text', '')
 
-            return self.send_json_response({'schedule': valid_schedule})
+                # Parse JSON from response
+                schedule = self.extract_json_array(text)
 
-        except Exception as e:
-            # Return fallback schedule on error
+                # Validate schedule items
+                valid_schedule = []
+                for item in schedule:
+                    if item.get('task_id') and item.get('date') and item.get('time_slot'):
+                        if item['date'] in dates:
+                            valid_schedule.append(item)
+
+                if valid_schedule:
+                    return self.send_json_response({'schedule': valid_schedule})
+
+            # Fallback if AI fails
             fallback = self.generate_fallback_schedule(tasks, dates)
             return self.send_json_response({'schedule': fallback, 'fallback': True})
 
-    def handle_suggest(self, client, model, tasks, parameters):
+        except Exception as e:
+            fallback = self.generate_fallback_schedule(tasks, dates)
+            return self.send_json_response({'schedule': fallback, 'fallback': True, 'error': str(e)})
+
+    def handle_suggest(self, headers, model, tasks, parameters):
         """Suggest next task to work on"""
         if not tasks:
             return self.send_json_response({'suggestion': None})
@@ -182,49 +215,63 @@ JSON:"""
             for t in tasks[:10]
         ])
 
-        prompt = f"""You have {available_minutes} minutes available. Which task should you work on?
+        prompt = f"""<s>[INST] You have {available_minutes} minutes. Which task should you work on?
 
 TASKS:
 {task_list}
 
-Consider priority and due dates. Respond with JSON only:
-{{"task_id": <id>, "title": "<task name>", "reason": "<brief reason>"}}
-
-JSON:"""
+Consider priority and due dates. Respond with ONLY this JSON format:
+{{"task_id": <number>, "title": "<task name>", "reason": "<brief reason>"}}
+[/INST]"""
 
         try:
-            response = client.text_generation(
-                prompt=prompt,
-                model=model,
-                max_new_tokens=150,
-                temperature=0.3,
-                return_full_text=False
-            )
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 150,
+                    "temperature": 0.3,
+                    "return_full_text": False
+                }
+            }
 
-            suggestion = self.extract_json_object(response)
-            return self.send_json_response({'suggestion': suggestion})
+            response = self.query_hf(headers, model, payload)
+
+            if response.status_code == 200:
+                result = response.json()
+                text = ""
+                if isinstance(result, list) and len(result) > 0:
+                    text = result[0].get('generated_text', '')
+
+                suggestion = self.extract_json_object(text)
+                if suggestion:
+                    return self.send_json_response({'suggestion': suggestion})
+
+            # Fallback
+            return self.fallback_suggestion(tasks)
 
         except Exception as e:
-            # Fallback: return highest priority task
-            if tasks:
-                priority_order = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
-                sorted_tasks = sorted(tasks, key=lambda t: priority_order.get(t.get('priority', 'Medium'), 2))
-                top_task = sorted_tasks[0]
-                return self.send_json_response({
-                    'suggestion': {
-                        'task_id': top_task.get('id'),
-                        'title': top_task.get('title'),
-                        'reason': 'Highest priority task'
-                    },
-                    'fallback': True
-                })
-            return self.send_json_response({'suggestion': None})
+            return self.fallback_suggestion(tasks)
+
+    def fallback_suggestion(self, tasks):
+        """Return highest priority task as fallback"""
+        if tasks:
+            priority_order = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
+            sorted_tasks = sorted(tasks, key=lambda t: priority_order.get(t.get('priority', 'Medium'), 2))
+            top_task = sorted_tasks[0]
+            return self.send_json_response({
+                'suggestion': {
+                    'task_id': top_task.get('id'),
+                    'title': top_task.get('title'),
+                    'reason': 'Highest priority task'
+                },
+                'fallback': True
+            })
+        return self.send_json_response({'suggestion': None})
 
     def extract_json_array(self, text):
         """Extract JSON array from text"""
         import re
         try:
-            # Find JSON array pattern
             match = re.search(r'\[[\s\S]*?\]', text)
             if match:
                 return json.loads(match.group())
@@ -244,7 +291,7 @@ JSON:"""
         return None
 
     def generate_fallback_schedule(self, tasks, dates):
-        """Generate a simple schedule when AI fails"""
+        """Generate simple schedule when AI fails"""
         priority_order = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
         sorted_tasks = sorted(tasks, key=lambda t: priority_order.get(t.get('priority', 'Medium'), 2))
 
