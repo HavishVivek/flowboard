@@ -24,13 +24,13 @@
         <div>
           <label class="label">Model</label>
           <select v-model="settings.hfModel" class="select w-full">
-            <option value="meta-llama/Llama-3.2-3B-Instruct">Llama 3.2 3B (Fast, Free)</option>
-            <option value="meta-llama/Meta-Llama-3-8B-Instruct">Llama 3 8B (Balanced)</option>
-            <option value="Qwen/Qwen2.5-7B-Instruct">Qwen 2.5 7B</option>
-            <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B v0.3</option>
+            <option value="mistralai/Mixtral-8x7B-Instruct-v0.1">Mixtral 8x7B (Recommended)</option>
+            <option value="meta-llama/Meta-Llama-3-8B-Instruct">Llama 3 8B</option>
+            <option value="HuggingFaceH4/zephyr-7b-beta">Zephyr 7B</option>
+            <option value="google/flan-t5-xxl">Flan-T5 XXL (Fast)</option>
           </select>
           <p class="text-xs text-gray-500 mt-1">
-            Choose a model. <a href="https://huggingface.co/settings/inference-providers" target="_blank" class="text-primary-400 hover:underline">Enable providers here</a> if needed.
+            Models available on the free Serverless Inference API
           </p>
         </div>
         <div>
@@ -142,7 +142,7 @@ const connectionStatus = ref(null)
 
 async function loadSettings() {
   settings.value.hfApiKey = await getSetting('hfApiKey') || ''
-  settings.value.hfModel = await getSetting('hfModel') || 'meta-llama/Llama-3.2-3B-Instruct'
+  settings.value.hfModel = await getSetting('hfModel') || 'mistralai/Mixtral-8x7B-Instruct-v0.1'
   settings.value.weeklyContentGoal = await getSetting('weeklyContentGoal') || 1
   settings.value.workHoursPerDay = await getSetting('workHoursPerDay') || 8
   settings.value.preferredWorkTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
