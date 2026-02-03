@@ -6,7 +6,7 @@ import requests
 HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
 
 # Models available via HF Inference provider
-DEFAULT_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
+DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
@@ -84,7 +84,7 @@ class handler(BaseHTTPRequestHandler):
             elif response.status_code == 401:
                 return self.send_json_response({
                     'success': False,
-                    'message': 'Invalid API key'
+                    'message': 'Invalid API key. Make sure your token starts with "hf_" and has Inference permissions.'
                 })
             elif response.status_code == 503:
                 return self.send_json_response({
@@ -99,12 +99,12 @@ class handler(BaseHTTPRequestHandler):
                         error_msg = error_msg.get('message', str(error_data))
                     return self.send_json_response({
                         'success': False,
-                        'message': f'Error: {error_msg}'
+                        'message': f'Error ({response.status_code}): {error_msg}'
                     })
                 except:
                     return self.send_json_response({
                         'success': False,
-                        'message': f'API error ({response.status_code}): {response.text[:200]}'
+                        'message': f'API error ({response.status_code}): {response.text[:300]}'
                     })
 
         except requests.exceptions.Timeout:

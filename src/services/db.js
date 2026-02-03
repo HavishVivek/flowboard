@@ -48,7 +48,7 @@ export async function initializeSettings() {
     await db.settings.bulkPut([
       { key: 'initialized', value: true },
       { key: 'hfApiKey', value: '' },
-      { key: 'hfModel', value: 'mistralai/Mistral-7B-Instruct-v0.3' },
+      { key: 'hfModel', value: 'Qwen/Qwen2.5-1.5B-Instruct' },
       { key: 'weeklyContentGoal', value: 1 },
       { key: 'workHoursPerDay', value: 8 },
       { key: 'preferredWorkTimes', value: ['morning', 'afternoon'] }

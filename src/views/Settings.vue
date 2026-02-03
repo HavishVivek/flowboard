@@ -24,13 +24,13 @@
         <div>
           <label class="label">Model</label>
           <select v-model="settings.hfModel" class="select w-full">
-            <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B v0.3</option>
-            <option value="meta-llama/Llama-3.2-3B-Instruct">Llama 3.2 3B (Fast)</option>
-            <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Fastest)</option>
-            <option value="microsoft/Phi-3-mini-4k-instruct">Phi-3 Mini</option>
+            <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Recommended)</option>
+            <option value="microsoft/Phi-3.5-mini-instruct">Phi 3.5 Mini</option>
+            <option value="HuggingFaceH4/zephyr-7b-beta">Zephyr 7B</option>
+            <option value="google/gemma-2-2b-it">Gemma 2 2B</option>
           </select>
           <p class="text-xs text-gray-500 mt-1">
-            Using HF Inference Providers (router.huggingface.co)
+            Models supported by HF Inference provider
           </p>
         </div>
         <div>
@@ -142,7 +142,7 @@ const connectionStatus = ref(null)
 
 async function loadSettings() {
   settings.value.hfApiKey = await getSetting('hfApiKey') || ''
-  settings.value.hfModel = await getSetting('hfModel') || 'mistralai/Mistral-7B-Instruct-v0.3'
+  settings.value.hfModel = await getSetting('hfModel') || 'Qwen/Qwen2.5-1.5B-Instruct'
   settings.value.weeklyContentGoal = await getSetting('weeklyContentGoal') || 1
   settings.value.workHoursPerDay = await getSetting('workHoursPerDay') || 8
   settings.value.preferredWorkTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
