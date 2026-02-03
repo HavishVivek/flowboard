@@ -1,4 +1,4 @@
-const HF_API_URL = 'https://router.huggingface.co/hf-inference/models'
+const HF_API_URL = 'https://router.huggingface.co/v1/chat/completions'
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -22,16 +22,17 @@ export default async function handler(req, res) {
 
   try {
     if (action === 'test') {
-      // Test connection
-      const response = await fetch(`${HF_API_URL}/${model || 'mistralai/Mistral-7B-Instruct-v0.2'}`, {
+      // Test connection with a simple request
+      const response = await fetch(HF_API_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          inputs: 'Hello',
-          parameters: { max_new_tokens: 10 }
+          model: model || 'mistralai/Mistral-7B-Instruct-v0.2',
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5
         })
       })
 
@@ -48,20 +49,18 @@ export default async function handler(req, res) {
     }
 
     if (action === 'generate') {
-      // Generate text
-      const response = await fetch(`${HF_API_URL}/${model}`, {
+      // Generate text using chat completions format
+      const response = await fetch(HF_API_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: parameters?.maxTokens || 500,
-            temperature: parameters?.temperature || 0.7,
-            return_full_text: false
-          }
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: parameters?.maxTokens || 500,
+          temperature: parameters?.temperature || 0.7
         })
       })
 
@@ -71,7 +70,13 @@ export default async function handler(req, res) {
       }
 
       const data = await response.json()
-      return res.status(200).json(data)
+
+      // OpenAI format returns choices[0].message.content
+      if (data.choices && data.choices[0]?.message?.content) {
+        return res.status(200).json([{ generated_text: data.choices[0].message.content }])
+      }
+
+      return res.status(500).json({ error: 'Unexpected response format' })
     }
 
     return res.status(400).json({ error: 'Invalid action' })
