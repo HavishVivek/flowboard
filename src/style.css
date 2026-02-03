@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-700 hover:bg-gray-600 text-gray-100;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white;
+  }
+
+  .btn-success {
+    @apply bg-green-600 hover:bg-green-700 text-white;
+  }
+
+  .card {
+    @apply bg-gray-800 rounded-xl p-4 shadow-lg border border-gray-700;
+  }
+
+  .input {
+    @apply bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  .select {
+    @apply bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-300 mb-1;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-iot {
+    @apply bg-blue-900 text-blue-200;
+  }
+
+  .badge-ai {
+    @apply bg-purple-900 text-purple-200;
+  }
+
+  .badge-ml {
+    @apply bg-pink-900 text-pink-200;
+  }
+
+  .badge-electronics {
+    @apply bg-green-900 text-green-200;
+  }
+
+  .badge-other {
+    @apply bg-gray-600 text-gray-200;
+  }
+}
