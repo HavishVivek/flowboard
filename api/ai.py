@@ -2,10 +2,10 @@ from http.server import BaseHTTPRequestHandler
 import json
 import requests
 
-# HF Inference API endpoint
-HF_API_URL = "https://api-inference.huggingface.co/models"
+# HF Inference Providers - OpenAI compatible endpoint
+HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
 
-# Models available on free HF Inference API
+# Models available via HF Inference provider
 DEFAULT_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 
 class handler(BaseHTTPRequestHandler):
@@ -32,7 +32,10 @@ class handler(BaseHTTPRequestHandler):
             if not api_key:
                 return self.send_json_response({'error': 'API key is required'}, 400)
 
-            headers = {"Authorization": f"Bearer {api_key}"}
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
 
             if action == 'test':
                 return self.handle_test(headers, model)
@@ -50,30 +53,33 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self.send_json_response({'error': str(e)}, 500)
 
-    def query_hf(self, headers, model, payload):
-        """Query the HF Inference API"""
+    def chat_completion(self, headers, model, messages, max_tokens=500, temperature=0.7):
+        """Call the HF Inference Providers chat completion endpoint"""
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature
+        }
+
         response = requests.post(
-            f"{HF_API_URL}/{model}",
+            HF_ROUTER_URL,
             headers=headers,
             json=payload,
-            timeout=60
+            timeout=120
         )
         return response
 
     def handle_test(self, headers, model):
-        """Test connection to HF Inference API"""
+        """Test connection to HF Inference Providers"""
         try:
-            payload = {
-                "inputs": "Hello, respond with 'Connected!'",
-                "parameters": {"max_new_tokens": 10}
-            }
-
-            response = self.query_hf(headers, model, payload)
+            messages = [{"role": "user", "content": "Say 'connected' in one word"}]
+            response = self.chat_completion(headers, model, messages, max_tokens=10)
 
             if response.status_code == 200:
                 return self.send_json_response({
                     'success': True,
-                    'message': f'Connected to HF Inference API! Model: {model}'
+                    'message': f'Connected to HF Inference Providers! Model: {model}'
                 })
             elif response.status_code == 401:
                 return self.send_json_response({
@@ -81,18 +87,25 @@ class handler(BaseHTTPRequestHandler):
                     'message': 'Invalid API key'
                 })
             elif response.status_code == 503:
-                # Model is loading
                 return self.send_json_response({
                     'success': True,
-                    'message': 'Connected! Model is loading, please wait ~20 seconds and try again.'
+                    'message': 'Connected! Model is loading, wait ~20 seconds.'
                 })
             else:
-                error_data = response.json() if response.text else {}
-                error_msg = error_data.get('error', response.text)
-                return self.send_json_response({
-                    'success': False,
-                    'message': f'API error ({response.status_code}): {error_msg}'
-                })
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('error', {})
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get('message', str(error_data))
+                    return self.send_json_response({
+                        'success': False,
+                        'message': f'Error: {error_msg}'
+                    })
+                except:
+                    return self.send_json_response({
+                        'success': False,
+                        'message': f'API error ({response.status_code}): {response.text[:200]}'
+                    })
 
         except requests.exceptions.Timeout:
             return self.send_json_response({
@@ -108,23 +121,17 @@ class handler(BaseHTTPRequestHandler):
     def handle_generate(self, headers, model, prompt, parameters):
         """General text generation"""
         try:
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": parameters.get('maxTokens', 500),
-                    "temperature": parameters.get('temperature', 0.7),
-                    "return_full_text": False
-                }
-            }
-
-            response = self.query_hf(headers, model, payload)
+            messages = [{"role": "user", "content": prompt}]
+            response = self.chat_completion(
+                headers, model, messages,
+                max_tokens=parameters.get('maxTokens', 500),
+                temperature=parameters.get('temperature', 0.7)
+            )
 
             if response.status_code == 200:
                 result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    text = result[0].get('generated_text', '')
-                    return self.send_json_response([{'generated_text': text}])
-                return self.send_json_response([{'generated_text': str(result)}])
+                text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                return self.send_json_response([{'generated_text': text}])
             else:
                 return self.send_json_response({'error': f'API error: {response.status_code}'}, 500)
 
@@ -141,13 +148,13 @@ class handler(BaseHTTPRequestHandler):
         today = datetime.now()
         dates = [(today + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
 
-        # Build task list for prompt
+        # Build task list
         task_list = "\n".join([
             f"- ID:{t.get('id')}, Task: {t.get('title')}, Priority: {t.get('priority', 'Medium')}, Due: {t.get('due_date', 'None')}"
             for t in tasks[:12]
         ])
 
-        prompt = f"""<s>[INST] You are a scheduling assistant. Create a weekly schedule for these tasks.
+        prompt = f"""You are a scheduling assistant. Create a weekly schedule for these tasks.
 
 TASKS:
 {task_list}
@@ -160,27 +167,16 @@ RULES:
 - Respect due dates (schedule before due date)
 - Spread tasks across different days
 
-Respond with ONLY a JSON array, no other text:
-[{{"task_id": 1, "date": "YYYY-MM-DD", "time_slot": "Morning (6am-12pm)"}}]
-[/INST]"""
+Respond with ONLY a JSON array, no explanation:
+[{{"task_id": 1, "date": "YYYY-MM-DD", "time_slot": "Morning (6am-12pm)"}}]"""
 
         try:
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 600,
-                    "temperature": 0.3,
-                    "return_full_text": False
-                }
-            }
-
-            response = self.query_hf(headers, model, payload)
+            messages = [{"role": "user", "content": prompt}]
+            response = self.chat_completion(headers, model, messages, max_tokens=600, temperature=0.3)
 
             if response.status_code == 200:
                 result = response.json()
-                text = ""
-                if isinstance(result, list) and len(result) > 0:
-                    text = result[0].get('generated_text', '')
+                text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
 
                 # Parse JSON from response
                 schedule = self.extract_json_array(text)
@@ -215,32 +211,21 @@ Respond with ONLY a JSON array, no other text:
             for t in tasks[:10]
         ])
 
-        prompt = f"""<s>[INST] You have {available_minutes} minutes. Which task should you work on?
+        prompt = f"""You have {available_minutes} minutes available. Which task should you work on?
 
 TASKS:
 {task_list}
 
-Consider priority and due dates. Respond with ONLY this JSON format:
-{{"task_id": <number>, "title": "<task name>", "reason": "<brief reason>"}}
-[/INST]"""
+Consider priority and due dates. Respond with ONLY this JSON:
+{{"task_id": <number>, "title": "<task name>", "reason": "<brief reason>"}}"""
 
         try:
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 150,
-                    "temperature": 0.3,
-                    "return_full_text": False
-                }
-            }
-
-            response = self.query_hf(headers, model, payload)
+            messages = [{"role": "user", "content": prompt}]
+            response = self.chat_completion(headers, model, messages, max_tokens=150, temperature=0.3)
 
             if response.status_code == 200:
                 result = response.json()
-                text = ""
-                if isinstance(result, list) and len(result) > 0:
-                    text = result[0].get('generated_text', '')
+                text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
 
                 suggestion = self.extract_json_object(text)
                 if suggestion:

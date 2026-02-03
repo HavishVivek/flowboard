@@ -24,13 +24,13 @@
         <div>
           <label class="label">Model</label>
           <select v-model="settings.hfModel" class="select w-full">
-            <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B v0.3 (Recommended)</option>
-            <option value="microsoft/Phi-3-mini-4k-instruct">Phi-3 Mini (Fast)</option>
-            <option value="HuggingFaceH4/zephyr-7b-beta">Zephyr 7B</option>
-            <option value="tiiuae/falcon-7b-instruct">Falcon 7B</option>
+            <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B v0.3</option>
+            <option value="meta-llama/Llama-3.2-3B-Instruct">Llama 3.2 3B (Fast)</option>
+            <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B (Fastest)</option>
+            <option value="microsoft/Phi-3-mini-4k-instruct">Phi-3 Mini</option>
           </select>
           <p class="text-xs text-gray-500 mt-1">
-            Models available on HF Inference API (free tier)
+            Using HF Inference Providers (router.huggingface.co)
           </p>
         </div>
         <div>
