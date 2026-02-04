@@ -1,11 +1,16 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import db from '../services/db'
+import { defineStore, storeToRefs } from 'pinia'
+import { ref, computed, watch } from 'vue'
+import { useAuthStore } from './auth'
+import { contentService, tasksService } from '../services/firestore'
 
 export const useContentStore = defineStore('content', () => {
+  const authStore = useAuthStore()
+  const { userId } = storeToRefs(authStore)
+
   const content = ref([])
   const loading = ref(false)
   const error = ref(null)
+  let unsubscribe = null
 
   // Computed
   const contentByStage = computed(() => {
@@ -46,11 +51,33 @@ export const useContentStore = defineStore('content', () => {
     return content.value.filter(c => c.stage === 'Published')
   })
 
+  // Subscribe to real-time updates
+  function subscribeToContent() {
+    if (!userId.value) return
+    if (unsubscribe) unsubscribe()
+
+    unsubscribe = contentService.subscribe(userId.value, (data) => {
+      content.value = data
+      loading.value = false
+    })
+  }
+
+  // Watch for auth changes
+  watch(userId, (newUserId) => {
+    if (newUserId) {
+      subscribeToContent()
+    } else {
+      if (unsubscribe) unsubscribe()
+      content.value = []
+    }
+  }, { immediate: true })
+
   // Actions
   async function fetchContent() {
+    if (!userId.value) return
     loading.value = true
     try {
-      content.value = await db.content.toArray()
+      content.value = await contentService.getAll(userId.value)
     } catch (e) {
       error.value = e.message
     } finally {
@@ -59,10 +86,12 @@ export const useContentStore = defineStore('content', () => {
   }
 
   async function fetchContentForProject(projectId) {
-    return await db.content.where('project_id').equals(projectId).toArray()
+    if (!userId.value) return []
+    return await contentService.getWhere(userId.value, 'project_id', '==', projectId)
   }
 
   async function addContent(item) {
+    if (!userId.value) return null
     const now = new Date().toISOString()
     const newContent = {
       ...item,
@@ -70,18 +99,12 @@ export const useContentStore = defineStore('content', () => {
       created_at: now
     }
 
-    const id = await db.content.add(newContent)
-    newContent.id = id
-    content.value.push(newContent)
-    return newContent
+    return await contentService.add(userId.value, newContent)
   }
 
   async function updateContent(id, updates) {
-    await db.content.update(id, updates)
-    const index = content.value.findIndex(c => c.id === id)
-    if (index !== -1) {
-      content.value[index] = { ...content.value[index], ...updates }
-    }
+    if (!userId.value) return
+    await contentService.update(userId.value, id, updates)
   }
 
   async function updateContentStage(id, stage) {
@@ -93,14 +116,19 @@ export const useContentStore = defineStore('content', () => {
   }
 
   async function deleteContent(id) {
-    await db.content.delete(id)
-    // Also delete related tasks
-    await db.tasks.where('content_id').equals(id).delete()
-    content.value = content.value.filter(c => c.id !== id)
+    if (!userId.value) return
+
+    // Delete related tasks
+    const relatedTasks = await tasksService.getWhere(userId.value, 'content_id', '==', id)
+    const taskIds = relatedTasks.map(t => t.id)
+    if (taskIds.length > 0) await tasksService.bulkDelete(userId.value, taskIds)
+
+    await contentService.remove(userId.value, id)
   }
 
   async function getContent(id) {
-    return await db.content.get(id)
+    if (!userId.value) return null
+    return await contentService.get(userId.value, id)
   }
 
   // Get content statistics

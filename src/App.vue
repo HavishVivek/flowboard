@@ -1,5 +1,12 @@
 <template>
   <div class="min-h-screen bg-gray-900 text-gray-100">
+    <!-- Auth page (no sidebar) -->
+    <template v-if="!authStore.isAuthenticated">
+      <router-view />
+    </template>
+
+    <!-- Main app layout with sidebar -->
+    <template v-else>
     <!-- Sidebar -->
     <aside class="fixed left-0 top-0 h-full w-64 bg-gray-800 border-r border-gray-700 flex flex-col z-40">
       <!-- Logo -->
@@ -42,12 +49,34 @@
           </div>
         </div>
       </div>
+
+      <!-- User Info & Logout -->
+      <div class="p-4 border-t border-gray-700">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-sm font-bold">
+            {{ userInitial }}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm truncate">{{ authStore.userEmail }}</div>
+          </div>
+          <button
+            @click="handleLogout"
+            class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+            title="Sign out"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </aside>
 
     <!-- Main Content -->
     <main class="ml-64 p-6">
       <router-view />
     </main>
+    </template>
 
     <!-- Quick Capture Shortcut (Cmd/Ctrl + K) -->
     <div v-if="showQuickCapture" class="fixed inset-0 bg-black/50 flex items-start justify-center pt-20 z-50" @click.self="showQuickCapture = false">
@@ -73,15 +102,27 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, h } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, nextTick, h, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useProjectsStore } from './stores/projects'
 import { useTasksStore } from './stores/tasks'
-import { initializeSettings } from './services/db'
+import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
+const router = useRouter()
 const projectsStore = useProjectsStore()
 const tasksStore = useTasksStore()
+const authStore = useAuthStore()
+
+const userInitial = computed(() => {
+  const email = authStore.userEmail
+  return email ? email.charAt(0).toUpperCase() : '?'
+})
+
+async function handleLogout() {
+  await authStore.logoutUser()
+  router.push('/auth')
+}
 
 const showQuickCapture = ref(false)
 const quickCaptureText = ref('')
@@ -181,10 +222,19 @@ async function submitQuickCapture() {
 }
 
 onMounted(async () => {
-  await initializeSettings()
-  await projectsStore.fetchProjects()
-  await tasksStore.fetchTasks()
+  if (authStore.isAuthenticated) {
+    await projectsStore.fetchProjects()
+    await tasksStore.fetchTasks()
+  }
   window.addEventListener('keydown', handleKeydown)
+})
+
+// Fetch data when user logs in
+watch(() => authStore.isAuthenticated, async (isAuth) => {
+  if (isAuth) {
+    await projectsStore.fetchProjects()
+    await tasksStore.fetchTasks()
+  }
 })
 
 onUnmounted(() => {

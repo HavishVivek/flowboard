@@ -188,6 +188,15 @@
           </div>
           <p v-else class="text-gray-500 text-sm">No content linked to this project</p>
         </div>
+
+        <!-- Notes Section -->
+        <div class="border-t border-gray-700 pt-4">
+          <NotesList
+            v-if="selectedProject"
+            parent-type="project"
+            :parent-id="selectedProject.id"
+          />
+        </div>
       </div>
       <template #footer>
         <div class="flex justify-between">
@@ -284,6 +293,7 @@ import { CATEGORIES, PROJECT_STATUSES, TASK_PRIORITIES, CONTENT_TYPES, calculate
 import ProjectCard from '../components/ProjectCard.vue'
 import TaskList from '../components/TaskList.vue'
 import Modal from '../components/Modal.vue'
+import NotesList from '../components/NotesList.vue'
 
 const projectsStore = useProjectsStore()
 const tasksStore = useTasksStore()

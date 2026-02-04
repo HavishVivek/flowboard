@@ -11,6 +11,12 @@
       </div>
     </div>
 
+    <!-- AI Content Generator for Date Ideas -->
+    <AiContentGenerator
+      @use-title="handleAiTitle"
+      @save-idea="handleAiIdea"
+    />
+
     <!-- Weekly Schedule -->
     <WeeklySchedule
       :schedule-items="scheduleWithDetails"
@@ -163,9 +169,10 @@ import { useTasksStore } from '../stores/tasks'
 import { useContentStore } from '../stores/content'
 import { useProjectsStore } from '../stores/projects'
 import { TIME_SLOTS } from '../services/db'
-import { generateWeeklySchedule } from '../services/ai'
+import { generateWeeklySchedule } from '../services/groqAI'
 import WeeklySchedule from '../components/WeeklySchedule.vue'
 import Modal from '../components/Modal.vue'
+import AiContentGenerator from '../components/AiContentGenerator.vue'
 
 const scheduleStore = useScheduleStore()
 const tasksStore = useTasksStore()
@@ -310,7 +317,7 @@ async function generateSchedule() {
     }
   } catch (e) {
     console.error('Failed to generate schedule:', e)
-    alert('Failed to generate schedule. Make sure Ollama is running.')
+    alert('Failed to generate schedule: ' + e.message)
   } finally {
     generating.value = false
   }
@@ -355,6 +362,24 @@ async function toggleTask(taskId) {
 
 function viewContent(item) {
   console.log('View content:', item)
+}
+
+// Handle AI-generated content
+function handleAiTitle(title) {
+  console.log('AI Title:', title)
+  // Could navigate to content creation or open a modal
+}
+
+function handleAiIdea(idea) {
+  // Add as new content idea
+  contentStore.addContent({
+    title: idea.title,
+    description: idea.description,
+    type: 'Blog',
+    stage: 'Idea',
+    project_id: null,
+    scheduled_date: ''
+  })
 }
 
 onMounted(async () => {

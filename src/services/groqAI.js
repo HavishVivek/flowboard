@@ -1,69 +1,213 @@
 import { getSetting } from './db'
 
-// Get Ollama configuration from settings
+const PROXY_URL = 'http://localhost:3001/api/ai-generate'
+const ENV_API_KEY = import.meta.env.VITE_GROQ_API_KEY || ''
+
+const MAX_RETRIES = 3
+const RETRY_DELAY = 2000
+
 async function getConfig() {
-  // Always use proxy in development to avoid CORS issues
-  const url = import.meta.env.DEV ? '/ollama' : (await getSetting('ollamaUrl') || 'http://localhost:11434')
-  const model = await getSetting('ollamaModel') || 'llama3.2'
-  return { url, model }
+  const apiKey = ENV_API_KEY || await getSetting('groqApiKey')
+  return { apiKey }
 }
 
-// Test connection to Ollama
-export async function testConnection(customUrl = null) {
-  let url
-  if (customUrl) {
-    url = customUrl
-  } else {
-    const config = await getConfig()
-    url = config.url
+export async function isConfigured() {
+  if (ENV_API_KEY) return true
+  const settingsKey = await getSetting('groqApiKey')
+  return !!settingsKey
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function callGroqAPI(prompt, maxTokens = 500) {
+  const { apiKey } = await getConfig()
+
+  if (!apiKey) {
+    throw new Error('Groq API key not configured. Please add your API key in Settings.')
+  }
+
+  let lastError = null
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(PROXY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt,
+          apiKey,
+          maxTokens
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        return data.choices[0].message.content.trim()
+      }
+
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.error?.message || `API error: ${response.status}`)
+
+    } catch (error) {
+      lastError = error
+
+      if (error.message.includes('API key')) {
+        throw error
+      }
+
+      if (attempt < MAX_RETRIES) {
+        console.log(`Retrying (attempt ${attempt}/${MAX_RETRIES})`)
+        await sleep(RETRY_DELAY)
+        continue
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to generate content after multiple attempts')
+}
+
+export async function testConnection() {
+  const { apiKey } = await getConfig()
+
+  if (!apiKey) {
+    return {
+      success: false,
+      message: 'No API key configured. Add your Groq API key in Settings.'
+    }
   }
 
   try {
-    const response = await fetch(`${url}/api/tags`, {
-      method: 'GET'
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      const models = data.models?.map(m => m.name).join(', ') || 'None'
-      return { success: true, message: `Connected! Available models: ${models}` }
-    } else {
-      return { success: false, message: `Server responded with status ${response.status}` }
+    await callGroqAPI('Hello', 10)
+    return {
+      success: true,
+      message: 'Connected successfully to Groq AI!'
     }
-  } catch (e) {
-    return { success: false, message: `Connection failed: ${e.message}` }
+  } catch (error) {
+    return {
+      success: false,
+      message: `Connection failed: ${error.message}`
+    }
   }
 }
 
-// Generate text using Ollama
-async function generate(prompt, options = {}) {
-  const { url, model } = await getConfig()
+export async function generateSocialPostIdeas(topic, platform = 'general', date = null) {
+  const dateContext = date ? `\nDate context: ${date}` : ''
 
-  const response = await fetch(`${url}/api/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: options.model || model,
-      prompt,
-      stream: false,
-      options: {
-        temperature: options.temperature || 0.7,
-        num_predict: options.maxTokens || 1000
-      }
-    })
+  const prompt = `Generate 3 engaging ${platform} post ideas about: "${topic}"${dateContext}
+
+Requirements:
+- Make them attention-grabbing and shareable
+- Include relevant hashtag suggestions
+- Keep appropriate length for ${platform}
+- Be creative and original
+
+Format each idea clearly numbered 1, 2, 3.`
+
+  return await callGroqAPI(prompt, 600)
+}
+
+export async function generateBlogTitles(topic, style = 'informative') {
+  const prompt = `Generate 5 compelling blog title options for a ${style} article about: "${topic}"
+
+Requirements:
+- Titles should be SEO-friendly
+- Include power words that drive clicks
+- Vary the formats (questions, how-tos, lists, etc.)
+- Keep under 60 characters when possible
+
+List the 5 titles numbered 1-5.`
+
+  return await callGroqAPI(prompt, 300)
+}
+
+export async function generateContentOutline(title, type = 'blog', sections = 5) {
+  const typeGuidance = {
+    blog: 'Include an introduction, main points with subheadings, and conclusion',
+    video: 'Include hook, main segments, and call-to-action',
+    tutorial: 'Include prerequisites, step-by-step sections, and troubleshooting tips',
+    shorts: 'Include hook (first 3 seconds), main point, and quick CTA'
+  }
+
+  const prompt = `Create a detailed ${type} content outline for: "${title}"
+
+Requirements:
+- ${typeGuidance[type] || typeGuidance.blog}
+- Include approximately ${sections} main sections
+- Add bullet points under each section
+- Suggest key talking points
+
+Format with clear headings and bullet points.`
+
+  return await callGroqAPI(prompt, 700)
+}
+
+export async function generateDateBasedIdeas(date, niche = 'general') {
+  const dateObj = new Date(date)
+  const formattedDate = dateObj.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
   })
 
-  if (!response.ok) {
-    throw new Error(`Ollama API error: ${response.status}`)
-  }
+  const prompt = `Generate content ideas for ${formattedDate} in the ${niche} niche.
 
-  const data = await response.json()
-  return data.response
+Consider:
+- Any holidays or observances around this date
+- Seasonal relevance
+- Day of the week (weekday vs weekend content)
+- Trending topics that might be relevant
+
+Provide 4 content ideas with:
+1. Content title/topic
+2. Best format (video, blog, social post, etc.)
+3. Why it's relevant for this date
+4. Key angle or hook`
+
+  return await callGroqAPI(prompt, 600)
 }
 
-// Get task suggestions based on current context
+export async function generateDescription(title, type = 'video', keywords = '') {
+  const keywordClause = keywords ? `\nInclude these keywords naturally: ${keywords}` : ''
+
+  const prompt = `Write a compelling ${type} description for: "${title}"${keywordClause}
+
+Requirements:
+- 2-3 paragraphs
+- Hook readers in the first line
+- Include a call-to-action
+- Be informative but engaging
+- Optimize for search when relevant`
+
+  return await callGroqAPI(prompt, 400)
+}
+
+export async function generateCustomContent(userPrompt, options = {}) {
+  return await callGroqAPI(userPrompt, options.maxTokens || 500)
+}
+
+export async function suggestImprovements(content, goal = 'engagement') {
+  const prompt = `Review this content and suggest improvements focused on ${goal}:
+
+"${content}"
+
+Provide:
+1. Specific areas to improve
+2. Concrete suggestions with examples
+3. Quick wins for immediate improvement`
+
+  return await callGroqAPI(prompt, 500)
+}
+
+// ============ Task & Schedule Functions ============
+
+/**
+ * Get task suggestions based on current context
+ */
 export async function getTaskSuggestions(tasks, projects) {
   const taskList = tasks.slice(0, 10).map(t => ({
     id: t.id,
@@ -112,15 +256,11 @@ Respond ONLY with a JSON array of exactly 3 suggestions in this format:
 JSON array only, no other text:`
 
   try {
-    const response = await generate(prompt, { temperature: 0.5 })
-
-    // Extract JSON from response
+    const response = await callGroqAPI(prompt, 600)
     const jsonMatch = response.match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0])
     }
-
-    // Fallback suggestions if parsing fails
     return getFallbackSuggestions(tasks, timeContext)
   } catch (e) {
     console.error('AI suggestion error:', e)
@@ -128,7 +268,6 @@ JSON array only, no other text:`
   }
 }
 
-// Fallback suggestions when AI is unavailable
 function getFallbackSuggestions(tasks, timeContext) {
   const priorityOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 }
 
@@ -150,7 +289,9 @@ function getFallbackSuggestions(tasks, timeContext) {
   }))
 }
 
-// Generate weekly schedule
+/**
+ * Generate weekly schedule from tasks
+ */
 export async function generateWeeklySchedule(tasks, projects) {
   const workHours = await getSetting('workHoursPerDay') || 8
   const preferredTimes = await getSetting('preferredWorkTimes') || ['morning', 'afternoon']
@@ -197,13 +338,10 @@ Respond ONLY with a JSON array of schedule items:
 JSON array only, no other text:`
 
   try {
-    const response = await generate(prompt, { temperature: 0.3 })
-
-    // Extract JSON from response
+    const response = await callGroqAPI(prompt, 800)
     const jsonMatch = response.match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       const schedule = JSON.parse(jsonMatch[0])
-      // Validate and filter schedule items
       return schedule.filter(item =>
         item.task_id &&
         item.date &&
@@ -211,7 +349,6 @@ JSON array only, no other text:`
         weekDates.includes(item.date)
       )
     }
-
     return generateFallbackSchedule(tasks, weekDates, preferredTimes)
   } catch (e) {
     console.error('Schedule generation error:', e)
@@ -219,7 +356,6 @@ JSON array only, no other text:`
   }
 }
 
-// Fallback schedule generation
 function generateFallbackSchedule(tasks, weekDates, preferredTimes) {
   const priorityOrder = { Critical: 0, High: 1, Medium: 2, Low: 3 }
   const timeSlotMap = {
@@ -259,7 +395,9 @@ function generateFallbackSchedule(tasks, weekDates, preferredTimes) {
   return schedule
 }
 
-// Get "What should I work on?" suggestion
+/**
+ * Get suggestion for what to work on next
+ */
 export async function getNextTaskSuggestion(availableMinutes, tasks, projects) {
   const taskList = tasks
     .filter(t => !t.completed)
@@ -292,14 +430,12 @@ Respond with a single JSON object:
 JSON only:`
 
   try {
-    const response = await generate(prompt, { temperature: 0.3 })
-
+    const response = await callGroqAPI(prompt, 200)
     const jsonMatch = response.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0])
     }
 
-    // Fallback: return highest priority task
     if (taskList.length > 0) {
       return {
         task_id: taskList[0].id,
@@ -308,7 +444,6 @@ JSON only:`
         can_complete: true
       }
     }
-
     return null
   } catch (e) {
     console.error('Next task suggestion error:', e)
@@ -326,6 +461,14 @@ JSON only:`
 
 export default {
   testConnection,
+  isConfigured,
+  generateSocialPostIdeas,
+  generateBlogTitles,
+  generateContentOutline,
+  generateDateBasedIdeas,
+  generateDescription,
+  generateCustomContent,
+  suggestImprovements,
   getTaskSuggestions,
   generateWeeklySchedule,
   getNextTaskSuggestion

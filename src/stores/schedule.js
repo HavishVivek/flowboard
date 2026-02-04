@@ -1,11 +1,16 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import db from '../services/db'
+import { defineStore, storeToRefs } from 'pinia'
+import { ref, computed, watch } from 'vue'
+import { useAuthStore } from './auth'
+import { scheduleService } from '../services/firestore'
 
 export const useScheduleStore = defineStore('schedule', () => {
+  const authStore = useAuthStore()
+  const { userId } = storeToRefs(authStore)
+
   const scheduleItems = ref([])
   const loading = ref(false)
   const error = ref(null)
+  let unsubscribe = null
 
   // Computed
   const scheduleByDate = computed(() => {
@@ -37,11 +42,33 @@ export const useScheduleStore = defineStore('schedule', () => {
     return scheduleItems.value.filter(s => s.date >= start && s.date <= end)
   })
 
+  // Subscribe to real-time updates
+  function subscribeToSchedule() {
+    if (!userId.value) return
+    if (unsubscribe) unsubscribe()
+
+    unsubscribe = scheduleService.subscribe(userId.value, (data) => {
+      scheduleItems.value = data
+      loading.value = false
+    })
+  }
+
+  // Watch for auth changes
+  watch(userId, (newUserId) => {
+    if (newUserId) {
+      subscribeToSchedule()
+    } else {
+      if (unsubscribe) unsubscribe()
+      scheduleItems.value = []
+    }
+  }, { immediate: true })
+
   // Actions
   async function fetchSchedule() {
+    if (!userId.value) return
     loading.value = true
     try {
-      scheduleItems.value = await db.schedule.toArray()
+      scheduleItems.value = await scheduleService.getAll(userId.value)
     } catch (e) {
       error.value = e.message
     } finally {
@@ -50,13 +77,13 @@ export const useScheduleStore = defineStore('schedule', () => {
   }
 
   async function fetchScheduleForDateRange(startDate, endDate) {
-    return await db.schedule
-      .where('date')
-      .between(startDate, endDate, true, true)
-      .toArray()
+    if (!userId.value) return []
+    const allItems = await scheduleService.getAll(userId.value)
+    return allItems.filter(item => item.date >= startDate && item.date <= endDate)
   }
 
   async function addScheduleItem(item) {
+    if (!userId.value) return null
     const now = new Date().toISOString()
     const newItem = {
       ...item,
@@ -64,43 +91,40 @@ export const useScheduleStore = defineStore('schedule', () => {
       created_at: now
     }
 
-    const id = await db.schedule.add(newItem)
-    newItem.id = id
-    scheduleItems.value.push(newItem)
-    return newItem
+    return await scheduleService.add(userId.value, newItem)
   }
 
   async function updateScheduleItem(id, updates) {
-    await db.schedule.update(id, updates)
-    const index = scheduleItems.value.findIndex(s => s.id === id)
-    if (index !== -1) {
-      scheduleItems.value[index] = { ...scheduleItems.value[index], ...updates }
-    }
+    if (!userId.value) return
+    await scheduleService.update(userId.value, id, updates)
   }
 
   async function deleteScheduleItem(id) {
-    await db.schedule.delete(id)
-    scheduleItems.value = scheduleItems.value.filter(s => s.id !== id)
+    if (!userId.value) return
+    await scheduleService.remove(userId.value, id)
   }
 
   async function clearScheduleForDate(date) {
-    const items = await db.schedule.where('date').equals(date).toArray()
-    for (const item of items) {
-      await db.schedule.delete(item.id)
+    if (!userId.value) return
+    const items = scheduleItems.value.filter(s => s.date === date)
+    const ids = items.map(item => item.id)
+    if (ids.length > 0) {
+      await scheduleService.bulkDelete(userId.value, ids)
     }
-    scheduleItems.value = scheduleItems.value.filter(s => s.date !== date)
   }
 
   async function clearAiSuggestedSchedule() {
-    const aiItems = await db.schedule.where('ai_suggested').equals(true).toArray()
-    for (const item of aiItems) {
-      await db.schedule.delete(item.id)
+    if (!userId.value) return
+    const aiItems = scheduleItems.value.filter(item => item.ai_suggested === true)
+    const ids = aiItems.map(item => item.id)
+    if (ids.length > 0) {
+      await scheduleService.bulkDelete(userId.value, ids)
     }
-    scheduleItems.value = scheduleItems.value.filter(s => !s.ai_suggested)
   }
 
   // Bulk add schedule items (for AI-generated schedules)
   async function bulkAddScheduleItems(items) {
+    if (!userId.value) return []
     const now = new Date().toISOString()
     const newItems = items.map(item => ({
       ...item,
@@ -108,12 +132,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       created_at: now
     }))
 
-    const ids = await db.schedule.bulkAdd(newItems, { allKeys: true })
-    newItems.forEach((item, i) => {
-      item.id = ids[i]
-    })
-    scheduleItems.value.push(...newItems)
-    return newItems
+    return await scheduleService.bulkAdd(userId.value, newItems)
   }
 
   return {

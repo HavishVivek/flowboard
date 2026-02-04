@@ -14,6 +14,12 @@
       </button>
     </div>
 
+    <!-- AI Content Generator -->
+    <AiContentGenerator
+      @use-title="handleAiTitle"
+      @save-idea="handleAiIdea"
+    />
+
     <!-- Stats -->
     <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
       <div v-for="stage in stages" :key="stage" class="card text-center">
@@ -92,6 +98,14 @@
             <input v-model="form.scheduled_date" type="date" class="input w-full" />
           </div>
         </div>
+
+        <!-- Notes Section (only for existing content) -->
+        <div v-if="isEditing && form.id" class="border-t border-gray-700 pt-4">
+          <NotesList
+            parent-type="content"
+            :parent-id="form.id"
+          />
+        </div>
       </form>
       <template #footer>
         <div class="flex justify-end gap-2">
@@ -112,6 +126,8 @@ import { useProjectsStore } from '../stores/projects'
 import { CONTENT_TYPES, CONTENT_STAGES } from '../services/db'
 import ContentPipeline from '../components/ContentPipeline.vue'
 import Modal from '../components/Modal.vue'
+import AiContentGenerator from '../components/AiContentGenerator.vue'
+import NotesList from '../components/NotesList.vue'
 
 const contentStore = useContentStore()
 const projectsStore = useProjectsStore()
@@ -172,6 +188,26 @@ function openCreateModal() {
     scheduled_date: ''
   }
   showModal.value = true
+}
+
+// Handle AI-generated title
+function handleAiTitle(title) {
+  form.value.title = title
+  openCreateModal()
+}
+
+// Handle AI-generated idea (save as new content)
+function handleAiIdea(idea) {
+  form.value = {
+    title: idea.title,
+    description: idea.description,
+    type: 'Blog',
+    stage: 'Idea',
+    project_id: null,
+    scheduled_date: ''
+  }
+  showModal.value = true
+  isEditing.value = false
 }
 
 function openEditModal(content) {

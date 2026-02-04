@@ -1,12 +1,17 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import db from '../services/db'
+import { defineStore, storeToRefs } from 'pinia'
+import { ref, computed, watch } from 'vue'
+import { useAuthStore } from './auth'
 import { useProjectsStore } from './projects'
+import { tasksService } from '../services/firestore'
 
 export const useTasksStore = defineStore('tasks', () => {
+  const authStore = useAuthStore()
+  const { userId } = storeToRefs(authStore)
+
   const tasks = ref([])
   const loading = ref(false)
   const error = ref(null)
+  let unsubscribe = null
 
   // Computed
   const tasksByProject = computed(() => {
@@ -44,11 +49,33 @@ export const useTasksStore = defineStore('tasks', () => {
     })
   })
 
+  // Subscribe to real-time updates
+  function subscribeToTasks() {
+    if (!userId.value) return
+    if (unsubscribe) unsubscribe()
+
+    unsubscribe = tasksService.subscribe(userId.value, (data) => {
+      tasks.value = data
+      loading.value = false
+    })
+  }
+
+  // Watch for auth changes
+  watch(userId, (newUserId) => {
+    if (newUserId) {
+      subscribeToTasks()
+    } else {
+      if (unsubscribe) unsubscribe()
+      tasks.value = []
+    }
+  }, { immediate: true })
+
   // Actions
   async function fetchTasks() {
+    if (!userId.value) return
     loading.value = true
     try {
-      tasks.value = await db.tasks.toArray()
+      tasks.value = await tasksService.getAll(userId.value)
     } catch (e) {
       error.value = e.message
     } finally {
@@ -57,14 +84,17 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function fetchTasksForProject(projectId) {
-    return await db.tasks.where('project_id').equals(projectId).toArray()
+    if (!userId.value) return []
+    return await tasksService.getWhere(userId.value, 'project_id', '==', projectId)
   }
 
   async function fetchTasksForContent(contentId) {
-    return await db.tasks.where('content_id').equals(contentId).toArray()
+    if (!userId.value) return []
+    return await tasksService.getWhere(userId.value, 'content_id', '==', contentId)
   }
 
   async function addTask(task) {
+    if (!userId.value) return null
     const now = new Date().toISOString()
     const newTask = {
       ...task,
@@ -73,9 +103,7 @@ export const useTasksStore = defineStore('tasks', () => {
       created_at: now
     }
 
-    const id = await db.tasks.add(newTask)
-    newTask.id = id
-    tasks.value.push(newTask)
+    const result = await tasksService.add(userId.value, newTask)
 
     // Update project progress
     if (task.project_id) {
@@ -83,34 +111,32 @@ export const useTasksStore = defineStore('tasks', () => {
       await projectsStore.updateProjectProgress(task.project_id)
     }
 
-    return newTask
+    return result
   }
 
   async function updateTask(id, updates) {
+    if (!userId.value) return
+
     // Track completion timestamp
     if (updates.completed !== undefined) {
       const task = tasks.value.find(t => t.id === id)
       if (task) {
         if (updates.completed && !task.completed) {
-          // Task being completed - set completed_at
           updates.completed_at = new Date().toISOString()
         } else if (!updates.completed && task.completed) {
-          // Task being uncompleted - clear completed_at
           updates.completed_at = null
         }
       }
     }
 
-    await db.tasks.update(id, updates)
-    const index = tasks.value.findIndex(t => t.id === id)
-    if (index !== -1) {
-      const updatedTask = { ...tasks.value[index], ...updates }
-      tasks.value[index] = updatedTask
+    await tasksService.update(userId.value, id, updates)
 
-      // Update project progress if completion status changed
-      if (updates.completed !== undefined && updatedTask.project_id) {
+    // Update project progress if completion status changed
+    if (updates.completed !== undefined) {
+      const task = tasks.value.find(t => t.id === id)
+      if (task?.project_id) {
         const projectsStore = useProjectsStore()
-        await projectsStore.updateProjectProgress(updatedTask.project_id)
+        await projectsStore.updateProjectProgress(task.project_id)
       }
     }
   }
@@ -123,9 +149,9 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function deleteTask(id) {
+    if (!userId.value) return
     const task = tasks.value.find(t => t.id === id)
-    await db.tasks.delete(id)
-    tasks.value = tasks.value.filter(t => t.id !== id)
+    await tasksService.remove(userId.value, id)
 
     // Update project progress
     if (task?.project_id) {
@@ -135,19 +161,21 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function getTask(id) {
-    return await db.tasks.get(id)
+    if (!userId.value) return null
+    return await tasksService.get(userId.value, id)
   }
 
   // Get tasks that can be completed (no incomplete dependencies)
   async function getActionableTasks() {
-    const allTasks = await db.tasks.where('completed').equals(false).toArray()
+    if (!userId.value) return []
+    const allTasks = tasks.value.filter(t => !t.completed)
     const actionable = []
 
     for (const task of allTasks) {
       if (!task.depends_on) {
         actionable.push(task)
       } else {
-        const dependency = await db.tasks.get(task.depends_on)
+        const dependency = tasks.value.find(t => t.id === task.depends_on)
         if (dependency?.completed) {
           actionable.push(task)
         }
@@ -159,15 +187,16 @@ export const useTasksStore = defineStore('tasks', () => {
 
   // Get task with its dependencies
   async function getTaskWithDependencies(id) {
-    const task = await db.tasks.get(id)
+    if (!userId.value) return null
+    const task = await tasksService.get(userId.value, id)
     if (!task) return null
 
     let dependency = null
     if (task.depends_on) {
-      dependency = await db.tasks.get(task.depends_on)
+      dependency = await tasksService.get(userId.value, task.depends_on)
     }
 
-    const dependents = await db.tasks.where('depends_on').equals(id).toArray()
+    const dependents = tasks.value.filter(t => t.depends_on === id)
 
     return {
       ...task,

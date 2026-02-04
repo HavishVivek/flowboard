@@ -1,14 +1,15 @@
-import Dexie from 'dexie'
+// Constants for the application - no longer contains Dexie database code
 
-export const db = new Dexie('ProjectTrackerDB')
-
-db.version(1).stores({
-  projects: '++id, name, category, status, priority_score, created_at, updated_at',
-  content: '++id, title, type, project_id, stage, scheduled_date, published_date, created_at',
-  tasks: '++id, title, project_id, content_id, priority, due_date, completed, depends_on, created_at',
-  schedule: '++id, date, time_slot, task_id, ai_suggested, created_at',
-  settings: 'key'
-})
+// Stub for getSetting - settings now come from environment variables or Firestore
+// This maintains backward compatibility with groqAI.js
+export async function getSetting(key) {
+  const defaults = {
+    workHoursPerDay: 8,
+    preferredWorkTimes: ['morning', 'afternoon'],
+    groqApiKey: null // API key comes from VITE_GROQ_API_KEY env var
+  }
+  return defaults[key] ?? null
+}
 
 // Project categories
 export const CATEGORIES = ['IoT', 'AI', 'ML', 'Electronics', 'Other']
@@ -39,32 +40,6 @@ export function calculatePriorityScore(impact, urgency, effort) {
   // Formula: (Impact * Urgency) / Effort
   if (effort === 0) effort = 1
   return Math.round((impact * urgency) / effort * 10) / 10
-}
-
-// Initialize default settings
-export async function initializeSettings() {
-  const existingSettings = await db.settings.get('initialized')
-  if (!existingSettings) {
-    await db.settings.bulkPut([
-      { key: 'initialized', value: true },
-      { key: 'hfApiKey', value: '' },
-      { key: 'hfModel', value: 'Qwen/Qwen2.5-1.5B-Instruct' },
-      { key: 'weeklyContentGoal', value: 1 },
-      { key: 'workHoursPerDay', value: 8 },
-      { key: 'preferredWorkTimes', value: ['morning', 'afternoon'] }
-    ])
-  }
-}
-
-// Get a setting
-export async function getSetting(key) {
-  const setting = await db.settings.get(key)
-  return setting?.value
-}
-
-// Set a setting
-export async function setSetting(key, value) {
-  await db.settings.put({ key, value })
 }
 
 // Get current week date range (Monday to Sunday)
@@ -98,5 +73,3 @@ export function formatDateForInput(date) {
   const d = new Date(date)
   return d.toISOString().split('T')[0]
 }
-
-export default db
